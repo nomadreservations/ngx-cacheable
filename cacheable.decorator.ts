@@ -1,12 +1,12 @@
 import { empty, merge, Observable, of, Subject } from 'rxjs';
-import { delay, finalize, shareReplay, tap } from 'rxjs/operators';
+import { delay, finalize, shareReplay, tap, takeUntil } from 'rxjs/operators';
 import { DEFAULT_CACHE_RESOLVER, ICacheable, GlobalCacheConfig, IStorageStrategy } from './common';
 import { IObservableCacheConfig } from './common/IObservableCacheConfig';
 import { ICachePair } from './common/ICachePair';
 export const globalCacheBusterNotifier = new Subject<void>();
 
 export function Cacheable(cacheConfig: IObservableCacheConfig = {}) {
-  return function (
+  return function(
     _target: Object,
     _propertyKey: string,
     propertyDescriptor: TypedPropertyDescriptor<ICacheable<Observable<any>>>
@@ -18,6 +18,7 @@ export function Cacheable(cacheConfig: IObservableCacheConfig = {}) {
         ? new GlobalCacheConfig.storageStrategy() as IStorageStrategy
         : new cacheConfig.storageStrategy();
       const pendingCachePairs: Array<ICachePair<Observable<any>>> = [];
+      const unsubscribe$ = new Subject();
       /**
        * subscribe to the globalCacheBuster
        * if a custom cacheBusterObserver is passed, subscribe to it as well
@@ -38,7 +39,7 @@ export function Cacheable(cacheConfig: IObservableCacheConfig = {}) {
         : DEFAULT_CACHE_RESOLVER;
 
       /* use function instead of an arrow function to keep context of invocation */
-      (propertyDescriptor.value as any) = function (..._parameters: Array<any>) {
+      (propertyDescriptor.value as any) = function(..._parameters: Array<any>) {
         const cachePairs: Array<ICachePair<Observable<any>>> = storageStrategy.getAll(cacheKey);
         let parameters = _parameters.map(param => param !== undefined ? JSON.parse(JSON.stringify(param)) : param);
         let _foundCachePair = cachePairs.find(cp =>
@@ -46,6 +47,10 @@ export function Cacheable(cacheConfig: IObservableCacheConfig = {}) {
         const _foundPendingCachePair = pendingCachePairs.find(cp =>
           cacheConfig.cacheResolver(cp.parameters, parameters)
         );
+        if (!_foundPendingCachePair && pendingCachePairs.length > 0) {
+          unsubscribe$.next(true);
+          pendingCachePairs.length = 0;
+        }
         /**
          * check if maxAge is passed and cache has actually expired
          */
@@ -77,18 +82,20 @@ export function Cacheable(cacheConfig: IObservableCacheConfig = {}) {
           const response$ = (oldMethod.call(this, ...parameters) as Observable<
             any
           >).pipe(
-            finalize(() => {
-              /**
-               * if there has been an observable cache pair for these parameters, when it completes or errors, remove it
-               */
-              const _pendingCachePairToRemove = pendingCachePairs.find(cp =>
-                cacheConfig.cacheResolver(cp.parameters, parameters)
-              );
-              pendingCachePairs.splice(
-                pendingCachePairs.indexOf(_pendingCachePairToRemove),
-                1
-              );
-            }),
+            takeUntil(unsubscribe$),
+            finalize(
+              () => {
+                /**
+                 * if there has been an observable cache pair for these parameters, when it completes or errors, remove it
+                 */
+                const _pendingCachePairToRemove = pendingCachePairs.find(cp =>
+                  cacheConfig.cacheResolver(cp.parameters, parameters)
+                );
+                pendingCachePairs.splice(
+                  pendingCachePairs.indexOf(_pendingCachePairToRemove),
+                  1
+                );
+              }),
             tap(response => {
               /**
                * if maxCacheCount has not been passed, just shift the cachePair to make room for the new one
@@ -126,6 +133,7 @@ export function Cacheable(cacheConfig: IObservableCacheConfig = {}) {
             response: response$,
             created: new Date()
           });
+          console.log(parameters);
           return response$;
         }
       };

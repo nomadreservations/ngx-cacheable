@@ -1,5 +1,5 @@
 import { combineLatest, forkJoin, Observable } from 'rxjs';
-import { startWith } from 'rxjs/operators';
+import { startWith, tap } from 'rxjs/operators';
 import { globalCacheBusterNotifier } from '../cacheable.decorator';
 import { Cacheable } from '../cacheable.decorator';
 import { CacheBuster } from '../cache-buster.decorator';
@@ -17,8 +17,14 @@ strategies.forEach(s => {
   const cacheBusterNotifier = new Subject();
 
   class Service {
+    testInternalMethod(timeout: number) {
+    }
+
     mockServiceCall(parameter: any) {
       return timer(1000).pipe(mapTo({ payload: parameter }));
+    }
+    mockServiceCallWithReuse(timeout: number) {
+      return timer(timeout).pipe(tap(() => { this.testInternalMethod(timeout) }));
     }
     mockSaveServiceCall() {
       return timer(1000).pipe(mapTo('SAVED'));
@@ -31,6 +37,11 @@ strategies.forEach(s => {
     @Cacheable()
     getData(parameter: string) {
       return this.mockServiceCall(parameter);
+    }
+
+    @Cacheable()
+    getDataWithReuse(timeout: number) {
+      return this.mockServiceCallWithReuse(timeout);
     }
 
     @Cacheable()
@@ -148,7 +159,7 @@ strategies.forEach(s => {
     getData3(parameter: string) {
       return this.mockServiceCall(parameter);
     }
-    
+
     @Cacheable({
       maxAge: 7500,
       slidingExpiration: true,
@@ -158,7 +169,7 @@ strategies.forEach(s => {
       return this.mockServiceCall(parameter);
     }
   }
-  describe('CacheableDecorator', () => {
+  fdescribe('CacheableDecorator', () => {
     let service: Service = null;
     let mockServiceCallSpy: jasmine.Spy = null;
     beforeEach(() => {
@@ -222,6 +233,18 @@ strategies.forEach(s => {
       expect(mockServiceCallSpy).toHaveBeenCalledTimes(4);
     });
 
+
+    fit('return cached data and reuse the same stream', () => {
+      const testInternalMethod = spyOn(service, 'testInternalMethod').and.callThrough();
+      service.getDataWithReuse(1500).subscribe();
+      service.getDataWithReuse(1500).subscribe();
+      service.getDataWithReuse(1500).subscribe();
+      service.getDataWithReuse(1500).subscribe();
+      service.getDataWithReuse(1500).subscribe();
+      service.getDataWithReuse(1000).subscribe();
+      jasmine.clock().tick(2000);
+      expect(testInternalMethod).toHaveBeenCalledTimes(1);
+    });
     it('returns observables in cache with a referential type params', () => {
       let params = {
         number: [1]
