@@ -124,6 +124,41 @@
           }
         }
       }
+    },
+    "cacheable": {
+      "projectType": "library",
+      "root": "projects/cacheable",
+      "sourceRoot": "projects/cacheable/src",
+      "prefix": "lib",
+      "architect": {
+        "build": {
+          "builder": "@angular-devkit/build-ng-packagr:build",
+          "options": {
+            "tsConfig": "projects/cacheable/tsconfig.lib.json",
+            "project": "projects/cacheable/ng-package.json"
+          }
+        },
+        "test": {
+          "builder": "@angular-devkit/build-angular:karma",
+          "options": {
+            "main": "projects/cacheable/src/test.ts",
+            "tsConfig": "projects/cacheable/tsconfig.spec.json",
+            "karmaConfig": "projects/cacheable/karma.conf.js"
+          }
+        },
+        "lint": {
+          "builder": "@angular-devkit/build-angular:tslint",
+          "options": {
+            "tsConfig": [
+              "projects/cacheable/tsconfig.lib.json",
+              "projects/cacheable/tsconfig.spec.json"
+            ],
+            "exclude": [
+              "**/node_modules/**"
+            ]
+          }
+        }
+      }
     }},
   "defaultProject": "ngx-cacheable"
 }
